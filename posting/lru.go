@@ -21,27 +21,26 @@ package posting
 
 import (
 	"container/list"
-	"context"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/dgraph-io/dgraph/x"
+	"github.com/golang/glog"
 )
 
 // listCache is an LRU cache.
 type listCache struct {
 	sync.Mutex
 
-	ctx context.Context
 	// MaxSize is the maximum size of cache before an item is evicted.
-	MaxSize uint64
+	// MaxSize    uint64
+	MaxEntries int
 
-	curSize uint64
-	evicts  uint64
-	ll      *list.List
-	cache   map[string]*list.Element
-	done    int32
+	evicts uint64
+	ll     *list.List
+	cache  map[string]*list.Element
+	done   int32
 }
 
 type CacheStats struct {
@@ -51,35 +50,30 @@ type CacheStats struct {
 }
 
 type entry struct {
-	key  string
-	pl   *List
-	size uint64
+	key string
+	pl  *List
 }
 
 // New creates a new Cache.
-func newListCache(maxSize uint64) *listCache {
+func newListCache(maxEntries int) *listCache {
 	lc := &listCache{
-		ctx:     context.Background(),
-		MaxSize: maxSize,
-		ll:      list.New(),
-		cache:   make(map[string]*list.Element),
+		MaxEntries: maxEntries,
+		ll:         list.New(),
+		cache:      make(map[string]*list.Element),
 	}
 	go lc.removeOldestLoop()
 	return lc
 }
 
-func (c *listCache) UpdateMaxSize(size uint64) uint64 {
+func (c *listCache) UpdateMaxSize(size int) int {
 	c.Lock()
 	defer c.Unlock()
-	if size == 0 {
-		size = c.curSize
+	if size == -1 {
+		size = c.MaxEntries
 	}
-	if size < (50 << 20) {
-		size = 50 << 20
-	}
-	c.MaxSize = size
-	x.LcacheCapacity.Set(int64(c.MaxSize))
-	return c.MaxSize
+	c.MaxEntries = size
+	x.LcacheCapacity.Set(int64(c.MaxEntries))
+	return c.MaxEntries
 }
 
 // Add adds a value to the cache.
@@ -94,14 +88,9 @@ func (c *listCache) PutIfMissing(key string, pl *List) (res *List) {
 	}
 
 	e := &entry{
-		key:  key,
-		pl:   pl,
-		size: uint64(pl.EstimatedSize()),
+		key: key,
+		pl:  pl,
 	}
-	if e.size < 100 {
-		e.size = 100
-	}
-	c.curSize += e.size
 	ele := c.ll.PushFront(e)
 	c.cache[key] = ele
 
@@ -122,12 +111,23 @@ func (c *listCache) removeOldestLoop() {
 func (c *listCache) removeOldest() {
 	c.Lock()
 	defer c.Unlock()
-	ele := c.ll.Back()
-	for c.curSize > c.MaxSize && atomic.LoadInt32(&c.done) == 0 {
+	start := time.Now()
+	defer func() {
+		glog.Infof("lru.removeOldest blocked for: %s. Evicts: %d", time.Since(start), c.evicts)
+	}()
+	if c.MaxEntries == 0 || atomic.LoadInt32(&c.done) > 0 {
+		// Allow unlimited LRU cache, or we're done here.
+		return
+	}
+	if c.cache == nil {
+		return
+	}
+
+	// Allow 10ms out of every second for removal.
+	deadline := start.Add(10 * time.Millisecond)
+	for c.ll.Len() > c.MaxEntries && time.Now().Before(deadline) {
+		ele := c.ll.Back()
 		if ele == nil {
-			if c.curSize < 0 {
-				c.curSize = 0
-			}
 			break
 		}
 		e := ele.Value.(*entry)
@@ -147,7 +147,6 @@ func (c *listCache) removeOldest() {
 		prev := ele.Prev()
 		c.ll.Remove(ele)
 		c.evicts++
-		c.curSize -= e.size
 		ele = prev
 	}
 }
@@ -160,9 +159,6 @@ func (c *listCache) Get(key string) (pl *List) {
 	if ele, hit := c.cache[key]; hit {
 		c.ll.MoveToFront(ele)
 		e := ele.Value.(*entry)
-		est := uint64(e.pl.EstimatedSize())
-		c.curSize += est - e.size
-		e.size = est
 		return e.pl
 	}
 	return nil
@@ -175,7 +171,6 @@ func (c *listCache) Stats() CacheStats {
 
 	return CacheStats{
 		Length:    c.ll.Len(),
-		Size:      c.curSize,
 		NumEvicts: c.evicts,
 	}
 }
@@ -197,7 +192,6 @@ func (c *listCache) Reset() {
 	defer c.Unlock()
 	c.ll = list.New()
 	c.cache = make(map[string]*list.Element)
-	c.curSize = 0
 }
 
 func (c *listCache) iterate(cont func(l *List) bool) {

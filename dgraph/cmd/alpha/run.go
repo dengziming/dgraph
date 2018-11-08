@@ -120,9 +120,10 @@ they form a Raft group and provide synchronous replication.
 		"If set, all Alter requests to Dgraph would need to have this token."+
 			" The token can be passed as follows: For HTTP requests, in X-Dgraph-AuthToken header."+
 			" For Grpc, in auth-token key in the context.")
-	flag.Float64P("lru_mb", "l", -1,
-		"Estimated memory the LRU cache can take. "+
-			"Actual usage by the process would be more than specified here.")
+	// flag.Float64P("lru_mb", "l", -1,
+	// 	"Estimated memory the LRU cache can take. "+
+	// 		"Actual usage by the process would be more than specified here.")
+	flag.IntP("lru_num", "l", 10000, "Number of entries to keep in LRU cache.")
 	flag.Bool("debugmode", false,
 		"Enable debug mode for more debug information.")
 
@@ -354,7 +355,7 @@ func setupServer() {
 	http.HandleFunc("/admin/shutdown", shutDownHandler)
 	http.HandleFunc("/admin/backup", backupHandler)
 	http.HandleFunc("/admin/export", exportHandler)
-	http.HandleFunc("/admin/config/lru_mb", memoryLimitHandler)
+	http.HandleFunc("/admin/config/lru_num", memoryLimitHandler)
 
 	http.HandleFunc("/", homeHandler)
 	http.HandleFunc("/ui/keywords", keywordHandler)

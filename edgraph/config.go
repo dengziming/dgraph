@@ -101,9 +101,4 @@ func (o *Options) validate() {
 	wd, err := filepath.Abs(o.WALDir)
 	x.Check(err)
 	x.AssertTruef(pd != wd, "Posting and WAL directory cannot be the same ('%s').", o.PostingDir)
-	x.AssertTruefNoTrace(o.AllottedMemory != -1,
-		"LRU memory (--lru_mb) must be specified. (At least 1024 MB)")
-	x.AssertTruefNoTrace(o.AllottedMemory >= MinAllottedMemory,
-		"LRU memory (--lru_mb) must be at least %.0f MB. Currently set to: %f",
-		MinAllottedMemory, o.AllottedMemory)
 }

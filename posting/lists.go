@@ -19,7 +19,6 @@ package posting
 import (
 	"fmt"
 	"io/ioutil"
-	"math"
 	"os"
 	"os/exec"
 	"runtime"
@@ -119,18 +118,12 @@ func periodicUpdateStats(lc *y.Closer) {
 	defer lc.Done()
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
-	setLruMemory := true
-	var maxSize uint64
-	var lastUse float64
 	for {
 		select {
 		case <-lc.HasBeenClosed():
 			return
 		case <-ticker.C:
-			var ms runtime.MemStats
-			runtime.ReadMemStats(&ms)
-			megs := (ms.HeapInuse + ms.StackInuse) / (1 << 20)
-			inUse := float64(megs)
+			// TODO: Think we can remove this entire goroutine.
 
 			stats := lcache.Stats()
 			x.LcacheEvicts.Set(int64(stats.NumEvicts))
@@ -140,36 +133,7 @@ func periodicUpdateStats(lc *y.Closer) {
 			// Okay, we exceed the max memory threshold.
 			// Stop the world, and deal with this first.
 			x.NumGoRoutines.Set(int64(runtime.NumGoroutine()))
-			Config.Mu.Lock()
-			mem := Config.AllottedMemory
-			Config.Mu.Unlock()
-			if setLruMemory {
-				if inUse > 0.75*mem {
-					maxSize = lcache.UpdateMaxSize(0)
-					setLruMemory = false
-					lastUse = inUse
-				}
-				break
-			}
-
-			// If memory has not changed by 100MB.
-			if math.Abs(inUse-lastUse) < 100 {
-				break
-			}
-
-			delta := maxSize / 10
-			if delta > 50<<20 {
-				delta = 50 << 20 // Change lru cache size by max 50mb.
-			}
-			if inUse > 0.85*mem { // Decrease max Size by 10%
-				maxSize -= delta
-				maxSize = lcache.UpdateMaxSize(maxSize)
-				lastUse = inUse
-			} else if inUse < 0.65*mem { // Increase max Size by 10%
-				maxSize += delta
-				maxSize = lcache.UpdateMaxSize(maxSize)
-				lastUse = inUse
-			}
+			// TODO: What is Config.AllottedMemory?
 		}
 	}
 }
@@ -212,8 +176,8 @@ var (
 // Init initializes the posting lists package, the in memory and dirty list hash.
 func Init(ps *badger.DB) {
 	pstore = ps
-	lcache = newListCache(math.MaxUint64)
-	x.LcacheCapacity.Set(math.MaxInt64)
+	lcache = newListCache(100000) // TODO: Connect this to flag.
+	x.LcacheCapacity.Set(100000)
 
 	closer = y.NewCloser(2)
 

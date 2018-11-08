@@ -261,23 +261,60 @@ func (n *node) applyMutations(proposal *pb.Proposal) error {
 
 	tr.LazyPrintf("Applying %d edges", len(m.Edges))
 	span.Annotatef(nil, "To apply: %d edges", len(m.Edges))
-	var retries int
-	for _, edge := range m.Edges {
-		for {
-			err := runMutation(ctx, edge, txn)
-			if err == nil {
-				break
+
+	applyEdges := func(edges []*pb.DirectedEdge) error {
+		for _, edge := range edges {
+			for {
+				err := runMutation(ctx, edge, txn)
+				if err == nil {
+					break
+				}
+				if err != posting.ErrRetry {
+					tr.SetError()
+					return err
+				}
 			}
-			if err != posting.ErrRetry {
-				tr.SetError()
-				return err
-			}
-			retries++
+		}
+		return nil
+	}
+
+	const width int = 100
+	var num int
+
+	errCh := make(chan error, 1)
+	for start := 0; start < len(m.Edges); start += width {
+		end := start + width
+		if end > len(m.Edges) {
+			end = len(m.Edges)
+		}
+		go func(start, end int) {
+			errCh <- applyEdges(m.Edges[start:end])
+		}(start, end)
+		num++
+	}
+	span.Annotatef(nil, "Started %d goroutines", num)
+	for i := 0; i < num; i++ {
+		if err := <-errCh; err != nil {
+			return err
 		}
 	}
-	if retries > 0 {
-		span.Annotatef(nil, "retries=true num=%d", retries)
-	}
+
+	// for _, edge := range m.Edges {
+	// 	for {
+	// 		err := runMutation(ctx, edge, txn)
+	// 		if err == nil {
+	// 			break
+	// 		}
+	// 		if err != posting.ErrRetry {
+	// 			tr.SetError()
+	// 			return err
+	// 		}
+	// 		retries++
+	// 	}
+	// }
+	// if retries > 0 {
+	// 	span.Annotatef(nil, "retries=true num=%d", retries)
+	// }
 	tr.LazyPrintf("Done applying %d edges", len(m.Edges))
 	return nil
 }
