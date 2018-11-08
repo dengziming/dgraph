@@ -270,7 +270,6 @@ func (n *node) applyMutations(proposal *pb.Proposal) error {
 					break
 				}
 				if err != posting.ErrRetry {
-					tr.SetError()
 					return err
 				}
 			}
@@ -279,23 +278,33 @@ func (n *node) applyMutations(proposal *pb.Proposal) error {
 	}
 
 	const width int = 100
-	var num int
 
-	errCh := make(chan error, 1)
-	for start := 0; start < len(m.Edges); start += width {
-		end := start + width
-		if end > len(m.Edges) {
-			end = len(m.Edges)
-		}
-		go func(start, end int) {
-			errCh <- applyEdges(m.Edges[start:end])
-		}(start, end)
-		num++
-	}
-	span.Annotatef(nil, "Started %d goroutines", num)
-	for i := 0; i < num; i++ {
-		if err := <-errCh; err != nil {
+	if len(m.Edges) <= width {
+		// No need to run goroutines.
+		if err := applyEdges(m.Edges); err != nil {
+			tr.SetError()
 			return err
+		}
+
+	} else {
+		var num int
+		errCh := make(chan error, 1)
+		for start := 0; start < len(m.Edges); start += width {
+			end := start + width
+			if end > len(m.Edges) {
+				end = len(m.Edges)
+			}
+			go func(start, end int) {
+				errCh <- applyEdges(m.Edges[start:end])
+			}(start, end)
+			num++
+		}
+		span.Annotatef(nil, "Started %d goroutines", num)
+		for i := 0; i < num; i++ {
+			if err := <-errCh; err != nil {
+				tr.SetError()
+				return err
+			}
 		}
 	}
 
