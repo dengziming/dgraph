@@ -76,6 +76,7 @@ type List struct {
 	minTs         uint64 // commit timestamp of immutable layer, reject reads before this ts.
 	deleteMe      int32  // Using atomic for this, to avoid expensive SetForDeletion operation.
 	estimatedSize int32
+	pendingTxns   int32
 }
 
 // calculateSize would give you the size estimate. This is expensive, so run it carefully.
@@ -223,16 +224,10 @@ func (l *List) EstimatedSize() int32 {
 }
 
 // SetForDeletion will mark this List to be deleted, so no more mutations can be applied to this.
+// This function should not try to acquire any mutex lock.
 func (l *List) SetForDeletion() bool {
-	if l.AlreadyLocked() {
+	if atomic.LoadInt32(&l.pendingTxns) > 0 {
 		return false
-	}
-	l.RLock()
-	defer l.RUnlock()
-	for _, plist := range l.mutationMap {
-		if plist.CommitTs == 0 {
-			return false
-		}
 	}
 	atomic.StoreInt32(&l.deleteMe, 1)
 	return true
@@ -367,6 +362,7 @@ func (l *List) addMutation(ctx context.Context, txn *Txn, t *pb.DirectedEdge) er
 	}
 
 	l.updateMutationLayer(mpost)
+	atomic.AddInt32(&l.pendingTxns, 1)
 	atomic.AddInt32(&l.estimatedSize, int32(mpost.Size()+16 /* various overhead */))
 	txn.AddKeys(string(l.key), conflictKey)
 	return nil
@@ -394,6 +390,16 @@ func (l *List) commitMutation(startTs, commitTs uint64) error {
 	if atomic.LoadInt32(&l.deleteMe) == 1 {
 		return ErrRetry
 	}
+
+	defer func() {
+		// Let's set the pendingTxns.
+		for _, plist := range l.mutationMap {
+			if plist.CommitTs == 0 {
+				return
+			}
+		}
+		atomic.StoreInt32(&l.pendingTxns, 0)
+	}()
 
 	l.AssertLock()
 	plist, ok := l.mutationMap[startTs]
