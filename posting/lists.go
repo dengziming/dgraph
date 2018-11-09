@@ -17,6 +17,7 @@
 package posting
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -125,10 +126,10 @@ func periodicUpdateStats(lc *y.Closer) {
 		case <-ticker.C:
 			// TODO: Think we can remove this entire goroutine.
 
-			stats := lcache.Stats()
-			x.LcacheEvicts.Set(int64(stats.NumEvicts))
-			x.LcacheSize.Set(int64(stats.Size))
-			x.LcacheLen.Set(int64(stats.Length))
+			// stats := lcache.Stats()
+			// x.LcacheEvicts.Set(int64(stats.NumEvicts))
+			// x.LcacheSize.Set(int64(stats.Size))
+			// x.LcacheLen.Set(int64(stats.Length))
 
 			// Okay, we exceed the max memory threshold.
 			// Stop the world, and deal with this first.
@@ -176,7 +177,7 @@ var (
 // Init initializes the posting lists package, the in memory and dirty list hash.
 func Init(ps *badger.DB) {
 	pstore = ps
-	lcache = newListCache(100000) // TODO: Connect this to flag.
+	lcache = newListCache(0) // TODO: Connect this to flag.
 	x.LcacheCapacity.Set(100000)
 
 	closer = y.NewCloser(2)
@@ -203,9 +204,15 @@ func StopLRUEviction() {
 // worker pkg would push the indices to the watermarks held by lists.
 // And watermark stuff would have to be located outside worker pkg, maybe in x.
 // That way, we don't have a dependency conflict.
-func Get(key []byte) (rlist *List, err error) {
+func Get(ctx context.Context, key []byte) (rlist *List, err error) {
+	t := time.Now()
 	lp := lcache.Get(string(key))
 	if lp != nil {
+		if dur := time.Since(t); dur > time.Millisecond {
+			if tr, ok := trace.FromContext(ctx); ok {
+				tr.LazyPrintf("GetLru in Get took %v", dur)
+			}
+		}
 		x.LcacheHit.Add(1)
 		return lp, nil
 	}

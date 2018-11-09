@@ -66,7 +66,7 @@ type Txn struct {
 
 func (txn *Txn) Get(key []byte) (*List, error) {
 	if txn.getList == nil {
-		return Get(key)
+		return Get(context.Background(), key)
 	}
 	return txn.getList(key)
 }

@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
-	"time"
 
 	"github.com/dgraph-io/badger"
 	"github.com/dgraph-io/dgo/protos/api"
@@ -76,14 +75,8 @@ func runMutation(ctx context.Context, edge *pb.DirectedEdge, txn *posting.Txn) e
 		return err
 	}
 
-	t := time.Now()
 	key := x.DataKey(edge.Attr, edge.Entity)
-	plist, err := posting.Get(key)
-	if dur := time.Since(t); dur > time.Millisecond {
-		if tr, ok := trace.FromContext(ctx); ok {
-			tr.LazyPrintf("GetLru took %v", dur)
-		}
-	}
+	plist, err := posting.Get(ctx, key)
 	if err != nil {
 		return err
 	}

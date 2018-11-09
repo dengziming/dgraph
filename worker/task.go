@@ -349,7 +349,7 @@ func handleValuePostings(ctx context.Context, args funcArgs) error {
 		key = x.DataKey(attr, q.UidList.Uids[i])
 
 		// Get or create the posting list for an entity, attribute combination.
-		pl, err := posting.Get(key)
+		pl, err := posting.Get(nil, key)
 		if err != nil {
 			return err
 		}
@@ -504,7 +504,7 @@ func handleUidPostings(ctx context.Context, args funcArgs, opts posting.ListOpti
 		}
 
 		// Get or create the posting list for an entity, attribute combination.
-		pl, err := posting.Get(key)
+		pl, err := posting.Get(nil, key)
 		if err != nil {
 			return err
 		}
@@ -789,7 +789,7 @@ func handleRegexFunction(ctx context.Context, arg funcArgs) error {
 				return ctx.Err()
 			default:
 			}
-			pl, err := posting.Get(x.DataKey(attr, uid))
+			pl, err := posting.Get(nil, x.DataKey(attr, uid))
 			if err != nil {
 				return err
 			}
@@ -962,7 +962,7 @@ func filterGeoFunction(arg funcArgs) error {
 	isList := schema.State().IsList(attr)
 	filtered := &pb.List{}
 	for _, uid := range uids.Uids {
-		pl, err := posting.Get(x.DataKey(attr, uid))
+		pl, err := posting.Get(nil, x.DataKey(attr, uid))
 		if err != nil {
 			return err
 		}
@@ -1024,7 +1024,7 @@ func filterStringFunction(arg funcArgs) error {
 	// by the handleHasFunction for e.g. for a `has(name)` query.
 	for _, uid := range uids.Uids {
 		key := x.DataKey(attr, uid)
-		pl, err := posting.Get(key)
+		pl, err := posting.Get(nil, key)
 		if err != nil {
 			return err
 		}
@@ -1578,7 +1578,7 @@ func (cp *countParams) evaluate(out *pb.Result) error {
 
 	countKey := x.CountKey(cp.attr, uint32(count), cp.reverse)
 	if cp.fn == "eq" {
-		pl, err := posting.Get(countKey)
+		pl, err := posting.Get(nil, countKey)
 		if err != nil {
 			return err
 		}
@@ -1615,7 +1615,7 @@ func (cp *countParams) evaluate(out *pb.Result) error {
 	for itr.Seek(countKey); itr.ValidForPrefix(countPrefix); itr.Next() {
 		item := itr.Item()
 		key := item.KeyCopy(nil)
-		pl, err := posting.Get(key)
+		pl, err := posting.Get(nil, key)
 		if err != nil {
 			return err
 		}
