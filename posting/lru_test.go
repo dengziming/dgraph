@@ -17,12 +17,7 @@ limitations under the License.
 package posting
 
 import (
-	"fmt"
-	"sync"
-	"testing"
-
 	"github.com/dgraph-io/dgraph/protos/pb"
-	"github.com/stretchr/testify/require"
 )
 
 func getPosting() *List {
@@ -32,6 +27,7 @@ func getPosting() *List {
 	return l
 }
 
+/*
 func TestLCacheSize(t *testing.T) {
 	lcache := newListCache(500)
 
@@ -99,3 +95,4 @@ func TestLCachePutIfMissing(t *testing.T) {
 	lcache.PutIfMissing("1", l2)
 	require.Equal(t, l, lcache.Get("1"))
 }
+*/

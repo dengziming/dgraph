@@ -19,11 +19,14 @@ limitations under the License.
 // Package lru implements an LRU cache.
 package posting
 
+/*
 import (
 	"container/list"
 	"context"
 	"sync"
 	"time"
+
+	"github.com/golang/glog"
 
 	"github.com/dgraph-io/dgraph/x"
 )
@@ -121,6 +124,12 @@ func (c *listCache) removeOldest() {
 	// Only allow evictions for 10ms out of a second.
 	deadline := time.Now().Add(10 * time.Millisecond)
 	ele := c.ll.Back()
+	if c.curSize <= c.MaxSize {
+		glog.Infof("no need for eviction")
+	} else {
+		glog.Infof("start eviction, curSize %d, maxSize %d", c.curSize, c.MaxSize)
+	}
+
 	for c.curSize > c.MaxSize && time.Now().Before(deadline) {
 		if ele == nil {
 			if c.curSize < 0 {
@@ -148,6 +157,7 @@ func (c *listCache) removeOldest() {
 		c.curSize -= e.size
 		ele = prev
 	}
+	glog.Infof("done eviction")
 }
 
 // Get looks up a key's value from the cache.
@@ -234,3 +244,4 @@ func (c *listCache) delete(key []byte) {
 		delete(c.cache, string(key))
 	}
 }
+*/
