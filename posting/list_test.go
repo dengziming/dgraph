@@ -859,7 +859,7 @@ func TestAfterUIDCountWithCommit(t *testing.T) {
 
 var ps *badger.DB
 
-func TestMain(m *testing.M) {
+func setupTest() string {
 	x.Init()
 	Config.AllottedMemory = 1024.0
 	Config.CommitFraction = 0.10
@@ -874,9 +874,12 @@ func TestMain(m *testing.M) {
 	x.Check(err)
 	Init(ps)
 	schema.Init(ps)
+	return dir
+}
 
+func TestMain(m *testing.M) {
+	dir := setupTest()
 	r := m.Run()
-
 	os.RemoveAll(dir)
 	os.Exit(r)
 }
