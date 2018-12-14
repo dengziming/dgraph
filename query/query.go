@@ -1835,14 +1835,14 @@ func getReversePredicates(ctx context.Context) ([]string, error) {
 // from different instances. Note: taskQuery is nil for root node.
 func ProcessGraph(ctx context.Context, sg, parent *SubGraph, rch chan error) {
 	var suffix string
+	span := otrace.FromContext(ctx)
 	if len(sg.Params.Alias) > 0 {
 		suffix += "." + sg.Params.Alias
 	}
 	if len(sg.Attr) > 0 {
 		suffix += "." + sg.Attr
 	}
-	ctx, span := otrace.StartSpan(ctx, "query.ProcessGraph"+suffix)
-	defer span.End()
+	span.Annotate(nil, "query.ProcessGraph"+suffix)
 
 	if sg.Attr == "uid" {
 		// We dont need to call ProcessGraph for uid, as we already have uids
@@ -2418,8 +2418,8 @@ type QueryRequest struct {
 // Fills Subgraphs and Vars.
 // It optionally also returns a map of the allocated uids in case of an upsert request.
 func (req *QueryRequest) ProcessQuery(ctx context.Context) (err error) {
-	ctx, span := otrace.StartSpan(ctx, "query.ProcessQuery")
-	defer span.End()
+	span := otrace.FromContext(ctx)
+	span.Annotate(nil, "query.ProcessQuery")
 
 	// doneVars stores the processed variables.
 	req.vars = make(map[string]varValue)
