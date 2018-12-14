@@ -18,7 +18,6 @@ package posting
 
 import (
 	"context"
-	"io/ioutil"
 	"math"
 	"math/rand"
 	"os"
@@ -29,7 +28,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/dgraph-io/dgraph/protos/pb"
-	"github.com/dgraph-io/dgraph/schema"
 	"github.com/dgraph-io/dgraph/x"
 )
 
@@ -859,26 +857,8 @@ func TestAfterUIDCountWithCommit(t *testing.T) {
 
 var ps *badger.DB
 
-func setupTest() string {
-	x.Init()
-	Config.AllottedMemory = 1024.0
-	Config.CommitFraction = 0.10
-
-	dir, err := ioutil.TempDir("", "storetest_")
-	x.Check(err)
-
-	opt := badger.DefaultOptions
-	opt.Dir = dir
-	opt.ValueDir = dir
-	ps, err = badger.OpenManaged(opt)
-	x.Check(err)
-	Init(ps)
-	schema.Init(ps)
-	return dir
-}
-
 func TestMain(m *testing.M) {
-	dir := setupTest()
+	dir := SetupStore()
 	r := m.Run()
 	os.RemoveAll(dir)
 	os.Exit(r)

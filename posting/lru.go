@@ -39,8 +39,8 @@ type listCache struct {
 	// MaxSize is the maximum size of cache before an item is evicted.
 	MaxSize uint64
 
-	curSize uint64
-	evicts  uint64
+	CurSize uint64
+	Evicts  uint64
 	ll      *list.List
 	cache   map[string]*list.Element
 }
@@ -73,7 +73,7 @@ func (c *listCache) UpdateMaxSize(size uint64) uint64 {
 	c.Lock()
 	defer c.Unlock()
 	if size == 0 {
-		size = c.curSize
+		size = c.CurSize
 	}
 	if size < (50 << 20) {
 		size = 50 << 20
@@ -85,7 +85,9 @@ func (c *listCache) UpdateMaxSize(size uint64) uint64 {
 
 // Add adds a value to the cache.
 func (c *listCache) PutIfMissing(key string, pl *List) (res *List) {
+	glog.Infof("???? PutIfMissing trying to acquire lock")
 	c.Lock()
+	glog.Infof("oooo PutIfMissing acquired lock")
 	defer c.Unlock()
 
 	if ee, ok := c.cache[key]; ok {
@@ -102,7 +104,7 @@ func (c *listCache) PutIfMissing(key string, pl *List) (res *List) {
 	if e.size < 100 {
 		e.size = 100
 	}
-	c.curSize += e.size
+	c.CurSize += e.size
 	ele := c.ll.PushFront(e)
 	c.cache[key] = ele
 
@@ -124,16 +126,16 @@ func (c *listCache) removeOldest() {
 	// Only allow evictions for 10ms out of a second.
 	deadline := time.Now().Add(10 * time.Millisecond)
 	ele := c.ll.Back()
-	if c.curSize <= c.MaxSize {
+	if c.CurSize <= c.MaxSize {
 		glog.Infof("no need for eviction")
 	} else {
-		glog.Infof("start eviction, curSize %d, maxSize %d", c.curSize, c.MaxSize)
+		glog.Infof("start eviction, CurSize %d, maxSize %d", c.CurSize, c.MaxSize)
 	}
 
-	for c.curSize > c.MaxSize && time.Now().Before(deadline) {
+	for c.CurSize > c.MaxSize && time.Now().Before(deadline) {
 		if ele == nil {
-			if c.curSize < 0 {
-				c.curSize = 0
+			if c.CurSize < 0 {
+				c.CurSize = 0
 			}
 			break
 		}
@@ -153,8 +155,8 @@ func (c *listCache) removeOldest() {
 		// ele gets Reset once it's passed to Remove, so store the prev.
 		prev := ele.Prev()
 		c.ll.Remove(ele)
-		c.evicts++
-		c.curSize -= e.size
+		c.Evicts++
+		c.CurSize -= e.size
 		ele = prev
 	}
 	glog.Infof("done eviction")
@@ -162,14 +164,17 @@ func (c *listCache) removeOldest() {
 
 // Get looks up a key's value from the cache.
 func (c *listCache) Get(key string) (pl *List) {
+	glog.Infof("???? Get trying to acquire lock")
 	c.Lock()
+	glog.Infof("oooo Get acquired lock")
+
 	defer c.Unlock()
 
 	if ele, hit := c.cache[key]; hit {
 		c.ll.MoveToFront(ele)
 		e := ele.Value.(*entry)
 		est := uint64(e.pl.EstimatedSize())
-		c.curSize += est - e.size
+		c.CurSize += est - e.size
 		e.size = est
 		return e.pl
 	}
@@ -183,8 +188,8 @@ func (c *listCache) Stats() CacheStats {
 
 	return CacheStats{
 		Length:    c.ll.Len(),
-		Size:      c.curSize,
-		NumEvicts: c.evicts,
+		Size:      c.CurSize,
+		NumEvicts: c.Evicts,
 	}
 }
 
@@ -205,7 +210,7 @@ func (c *listCache) Reset() {
 	defer c.Unlock()
 	c.ll = list.New()
 	c.cache = make(map[string]*list.Element)
-	c.curSize = 0
+	c.CurSize = 0
 }
 
 func (c *listCache) iterate(cont func(l *List) bool) {

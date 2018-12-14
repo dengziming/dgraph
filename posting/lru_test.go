@@ -29,26 +29,26 @@ func getPosting() *List {
 
 /*
 func TestLCacheSize(t *testing.T) {
-	lcache := newListCache(500)
+	Lcache := newListCache(500)
 
 	for i := 0; i < 10; i++ {
 		// Put a posting list of size 2
 		l := getPosting()
-		lcache.PutIfMissing(fmt.Sprintf("%d", i), l)
-		lcache.removeOldest()
+		Lcache.PutIfMissing(fmt.Sprintf("%d", i), l)
+		Lcache.removeOldest()
 		if i < 5 {
-			require.Equal(t, lcache.curSize, uint64((i+1)*100))
+			require.Equal(t, Lcache.CurSize, uint64((i+1)*100))
 		} else {
-			require.Equal(t, lcache.curSize, uint64(500))
+			require.Equal(t, Lcache.CurSize, uint64(500))
 		}
 	}
 
-	require.Equal(t, lcache.evicts, uint64(5))
-	require.Equal(t, lcache.ll.Len(), 5)
+	require.Equal(t, Lcache.Evicts, uint64(5))
+	require.Equal(t, Lcache.ll.Len(), 5)
 }
 
 func TestLCacheSizeParallel(t *testing.T) {
-	lcache := newListCache(5000)
+	Lcache := newListCache(5000)
 
 	var wg sync.WaitGroup
 	for i := 0; i < 100; i++ {
@@ -56,43 +56,43 @@ func TestLCacheSizeParallel(t *testing.T) {
 		// Put a posting list of size 2
 		go func(i int) {
 			l := getPosting()
-			lcache.PutIfMissing(fmt.Sprintf("%d", i), l)
-			lcache.removeOldest()
+			Lcache.PutIfMissing(fmt.Sprintf("%d", i), l)
+			Lcache.removeOldest()
 			wg.Done()
 		}(i)
 	}
 
 	wg.Wait()
-	require.Equal(t, lcache.curSize, uint64(5000))
-	require.Equal(t, lcache.evicts, uint64(50))
-	require.Equal(t, lcache.ll.Len(), 50)
+	require.Equal(t, Lcache.CurSize, uint64(5000))
+	require.Equal(t, Lcache.Evicts, uint64(50))
+	require.Equal(t, Lcache.ll.Len(), 50)
 }
 
 func TestLCacheEviction(t *testing.T) {
-	lcache := newListCache(5000)
+	Lcache := newListCache(5000)
 
 	for i := 0; i < 100; i++ {
 		l := getPosting()
 		// Put a posting list of size 2
-		lcache.PutIfMissing(fmt.Sprintf("%d", i), l)
-		lcache.removeOldest()
+		Lcache.PutIfMissing(fmt.Sprintf("%d", i), l)
+		Lcache.removeOldest()
 	}
 
-	require.Equal(t, lcache.curSize, uint64(5000))
-	require.Equal(t, lcache.evicts, uint64(50))
-	require.Equal(t, lcache.ll.Len(), 50)
+	require.Equal(t, Lcache.CurSize, uint64(5000))
+	require.Equal(t, Lcache.Evicts, uint64(50))
+	require.Equal(t, Lcache.ll.Len(), 50)
 
 	for i := 0; i < 50; i++ {
-		require.Nil(t, lcache.Get(fmt.Sprintf("%d", i)))
+		require.Nil(t, Lcache.Get(fmt.Sprintf("%d", i)))
 	}
 }
 
 func TestLCachePutIfMissing(t *testing.T) {
 	l := getPosting()
-	lcache.PutIfMissing("1", l)
-	require.Equal(t, l, lcache.Get("1"))
+	Lcache.PutIfMissing("1", l)
+	require.Equal(t, l, Lcache.Get("1"))
 	l2 := getPosting()
-	lcache.PutIfMissing("1", l2)
-	require.Equal(t, l, lcache.Get("1"))
+	Lcache.PutIfMissing("1", l2)
+	require.Equal(t, l, Lcache.Get("1"))
 }
 */

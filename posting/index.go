@@ -339,7 +339,7 @@ func (l *List) AddMutationWithIndex(ctx context.Context, t *pb.DirectedEdge,
 		return l.handleDeleteAll(ctx, t, txn)
 	}
 
-	doUpdateIndex := pstore != nil && schema.State().IsIndexed(t.Attr)
+	doUpdateIndex := Pstore != nil && schema.State().IsIndexed(t.Attr)
 	hasCountIndex := schema.State().HasCount(t.Attr)
 	val, found, cp, err := txn.addMutationHelper(ctx, l, doUpdateIndex, hasCountIndex, t)
 	if err != nil {
@@ -370,7 +370,7 @@ func (l *List) AddMutationWithIndex(ctx context.Context, t *pb.DirectedEdge,
 	}
 	// Add reverse mutation irrespective of hasMutated, server crash can happen after
 	// mutation is synced and before reverse edge is synced
-	if (pstore != nil) && (t.ValueId != 0) && schema.State().IsReversed(t.Attr) {
+	if (Pstore != nil) && (t.ValueId != 0) && schema.State().IsReversed(t.Attr) {
 		if err := txn.addReverseMutation(ctx, t); err != nil {
 			return err
 		}
@@ -379,7 +379,7 @@ func (l *List) AddMutationWithIndex(ctx context.Context, t *pb.DirectedEdge,
 }
 
 func deleteEntries(prefix []byte, remove func(key []byte) bool) error {
-	return pstore.View(func(txn *badger.Txn) error {
+	return Pstore.View(func(txn *badger.Txn) error {
 		opt := badger.DefaultIteratorOptions
 		opt.Prefix = prefix
 		opt.PrefetchValues = false
@@ -387,7 +387,7 @@ func deleteEntries(prefix []byte, remove func(key []byte) bool) error {
 		itr := txn.NewIterator(opt)
 		defer itr.Close()
 
-		writer := x.NewTxnWriter(pstore)
+		writer := x.NewTxnWriter(Pstore)
 		for itr.Rewind(); itr.Valid(); itr.Next() {
 			item := itr.Item()
 			if !remove(item.Key()) {
@@ -413,7 +413,7 @@ func compareAttrAndType(key []byte, attr string, typ byte) bool {
 }
 
 func DeleteReverseEdges(attr string) error {
-	lcache.clear(func(key []byte) bool {
+	Lcache.clear(func(key []byte) bool {
 		return compareAttrAndType(key, attr, x.ByteReverse)
 	})
 	// Delete index entries from data store.
@@ -433,10 +433,10 @@ func deleteCountIndex(attr string, reverse bool) error {
 }
 
 func DeleteCountIndex(attr string) error {
-	lcache.clear(func(key []byte) bool {
+	Lcache.clear(func(key []byte) bool {
 		return compareAttrAndType(key, attr, x.ByteCount)
 	})
-	lcache.clear(func(key []byte) bool {
+	Lcache.clear(func(key []byte) bool {
 		return compareAttrAndType(key, attr, x.ByteCountRev)
 	})
 	// Delete index entries from data store.
@@ -471,7 +471,7 @@ func (r *rebuild) storeList(list *List) bool {
 }
 
 func (r *rebuild) Run(ctx context.Context) error {
-	t := pstore.NewTransactionAt(r.startTs, false)
+	t := Pstore.NewTransactionAt(r.startTs, false)
 	defer t.Discard()
 
 	glog.V(1).Infof("Rebuild: Starting process. StartTs=%d. Prefix=\n%s\n",
@@ -484,7 +484,7 @@ func (r *rebuild) Run(ctx context.Context) error {
 
 	// We create one txn for all the mutations to be housed in. We also create a
 	// localized posting list cache, to avoid stressing or mixing up with the
-	// global lcache (the LRU cache).
+	// global Lcache (the LRU cache).
 	txn := &Txn{StartTs: r.startTs}
 	r.cache = make(map[string]*List)
 	var numGets uint64
@@ -496,7 +496,7 @@ func (r *rebuild) Run(ctx context.Context) error {
 		if pl, ok := r.cache[string(key)]; ok {
 			return pl, nil
 		}
-		pl, err := getNew(key, pstore)
+		pl, err := getNew(key, Pstore)
 		if err != nil {
 			return nil, err
 		}
@@ -544,7 +544,7 @@ func (r *rebuild) Run(ctx context.Context) error {
 	}
 
 	// Now we write all the created posting lists to disk.
-	writer := x.NewTxnWriter(pstore)
+	writer := x.NewTxnWriter(Pstore)
 	for key := range txn.deltas {
 		pl, err := txn.Get([]byte(key))
 		if err != nil {
@@ -680,7 +680,7 @@ func RebuildReverseEdges(ctx context.Context, attr string, startTs uint64) error
 }
 
 func DeleteIndex(attr string) error {
-	lcache.clear(func(key []byte) bool {
+	Lcache.clear(func(key []byte) bool {
 		return compareAttrAndType(key, attr, x.ByteIndex)
 	})
 	// Delete index entries from data store.
@@ -698,8 +698,8 @@ func RebuildListType(ctx context.Context, attr string, startTs uint64) error {
 
 	// Let's clear out the cache for anything which belongs to this attribute,
 	// so once we're done, any reads would see the new list type. Note that we
-	// don't use lcache during the rebuild process.
-	lcache.clear(func(key []byte) bool {
+	// don't use Lcache during the rebuild process.
+	Lcache.clear(func(key []byte) bool {
 		return compareAttrAndType(key, attr, x.ByteData)
 	})
 
@@ -749,7 +749,7 @@ func RebuildListType(ctx context.Context, attr string, startTs uint64) error {
 }
 
 func DeleteAll() error {
-	lcache.clear(func([]byte) bool { return true })
+	Lcache.clear(func([]byte) bool { return true })
 	return deleteEntries(nil, func(key []byte) bool {
 		pk := x.Parse(key)
 		if pk == nil {
@@ -764,7 +764,7 @@ func DeleteAll() error {
 
 func DeletePredicate(ctx context.Context, attr string) error {
 	glog.Infof("Dropping predicate: [%s]", attr)
-	lcache.clear(func(key []byte) bool {
+	Lcache.clear(func(key []byte) bool {
 		return compareAttrAndType(key, attr, x.ByteData)
 	})
 	pk := x.ParsedKey{

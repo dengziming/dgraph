@@ -32,6 +32,7 @@ import (
 	"github.com/golang/glog"
 
 	"github.com/dgraph-io/dgraph/protos/pb"
+	"github.com/dgraph-io/dgraph/schema"
 	"github.com/dgraph-io/dgraph/x"
 )
 
@@ -114,9 +115,9 @@ func periodicUpdateStats(lc *y.Closer) {
 	defer lc.Done()
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
-	setLruMemory := true
-	var maxSize uint64
-	var lastUse float64
+	//setLruMemory := true
+	//var maxSize uint64
+	//var lastUse float64
 	for {
 		select {
 		case <-lc.HasBeenClosed():
@@ -124,47 +125,50 @@ func periodicUpdateStats(lc *y.Closer) {
 		case <-ticker.C:
 			var ms runtime.MemStats
 			runtime.ReadMemStats(&ms)
-			megs := (ms.HeapInuse + ms.StackInuse) / (1 << 20)
-			inUse := float64(megs)
+			//megs := (ms.HeapInuse + ms.StackInuse) / (1 << 20)
+			//inUse := float64(megs)
 
-			stats := lcache.Stats()
+			stats := Lcache.Stats()
 			x.LcacheEvicts.Set(int64(stats.NumEvicts))
 			x.LcacheSize.Set(int64(stats.Size))
 			x.LcacheLen.Set(int64(stats.Length))
 
 			// Okay, we exceed the max memory threshold.
 			// Stop the world, and deal with this first.
-			x.NumGoRoutines.Set(int64(runtime.NumGoroutine()))
-			Config.Mu.Lock()
-			mem := Config.AllottedMemory
-			Config.Mu.Unlock()
-			if setLruMemory {
-				if inUse > 0.75*mem {
-					maxSize = lcache.UpdateMaxSize(0)
-					setLruMemory = false
+			/*
+				x.NumGoRoutines.Set(int64(runtime.NumGoroutine()))
+				Config.Mu.Lock()
+				mem := Config.AllottedMemory
+				Config.Mu.Unlock()
+				if setLruMemory {
+					if inUse > 0.75*mem {
+						maxSize = Lcache.UpdateMaxSize(0)
+						setLruMemory = false
+						lastUse = inUse
+					}
+					break
+				}
+
+				// If memory has not changed by 100MB.
+				if math.Abs(inUse-lastUse) < 100 {
+					break
+				}
+
+				delta := maxSize / 10
+				if delta > 50<<20 {
+					delta = 50 << 20 // Change lru cache size by max 50mb.
+				}
+				if inUse > 0.85*mem { // Decrease max Size by 10%
+					maxSize -= delta
+					maxSize = Lcache.UpdateMaxSize(maxSize)
+					lastUse = inUse
+				} else if inUse < 0.65*mem { // Increase max Size by 10%
+					maxSize += delta
+					maxSize = Lcache.UpdateMaxSize(maxSize)
 					lastUse = inUse
 				}
-				break
-			}
 
-			// If memory has not changed by 100MB.
-			if math.Abs(inUse-lastUse) < 100 {
-				break
-			}
-
-			delta := maxSize / 10
-			if delta > 50<<20 {
-				delta = 50 << 20 // Change lru cache size by max 50mb.
-			}
-			if inUse > 0.85*mem { // Decrease max Size by 10%
-				maxSize -= delta
-				maxSize = lcache.UpdateMaxSize(maxSize)
-				lastUse = inUse
-			} else if inUse < 0.65*mem { // Increase max Size by 10%
-				maxSize += delta
-				maxSize = lcache.UpdateMaxSize(maxSize)
-				lastUse = inUse
-			}
+			*/
 		}
 	}
 }
@@ -199,21 +203,39 @@ func updateMemoryMetrics(lc *y.Closer) {
 }
 
 var (
-	pstore *badger.DB
-	lcache *listCache
+	Pstore *badger.DB
+	Lcache *listCache
 	closer *y.Closer
 )
 
 // Init initializes the posting lists package, the in memory and dirty list hash.
 func Init(ps *badger.DB) {
-	pstore = ps
-	lcache = newListCache(math.MaxUint64)
+	Pstore = ps
+	Lcache = newListCache(math.MaxUint64)
 	x.LcacheCapacity.Set(math.MaxInt64)
 
 	closer = y.NewCloser(2)
 
 	go periodicUpdateStats(closer)
 	go updateMemoryMetrics(closer)
+}
+
+func SetupStore() string {
+	x.Init()
+	Config.AllottedMemory = 1024.0
+	Config.CommitFraction = 0.10
+
+	dir, err := ioutil.TempDir("", "storetest_")
+	x.Check(err)
+
+	opt := badger.DefaultOptions
+	opt.Dir = dir
+	opt.ValueDir = dir
+	ps, err := badger.OpenManaged(opt)
+	x.Check(err)
+	Init(ps)
+	schema.Init(ps)
+	return dir
 }
 
 func Cleanup() {
@@ -231,7 +253,7 @@ func Cleanup() {
 // And watermark stuff would have to be located outside worker pkg, maybe in x.
 // That way, we don't have a dependency conflict.
 func Get(key []byte) (rlist *List, err error) {
-	lp := lcache.Get(string(key))
+	lp := Lcache.Get(string(key))
 	if lp != nil {
 		x.LcacheHit.Add(1)
 		return lp, nil
@@ -240,12 +262,12 @@ func Get(key []byte) (rlist *List, err error) {
 
 	// Any initialization for l must be done before PutIfMissing. Once it's added
 	// to the map, any other goroutine can retrieve it.
-	l, err := getNew(key, pstore)
+	l, err := getNew(key, Pstore)
 	if err != nil {
 		return nil, err
 	}
 	// We are always going to return lp to caller, whether it is l or not
-	lp = lcache.PutIfMissing(string(key), l)
+	lp = Lcache.PutIfMissing(string(key), l)
 	if lp != l {
 		x.LcacheRace.Add(1)
 	}
@@ -254,21 +276,21 @@ func Get(key []byte) (rlist *List, err error) {
 
 // GetLru checks the lru map and returns it if it exits
 func GetLru(key []byte) *List {
-	return lcache.Get(string(key))
+	return Lcache.Get(string(key))
 }
 
 // GetNoStore takes a key. It checks if the in-memory map has an updated value and returns it if it exists
 // or it gets from the store and DOES NOT ADD to lru cache.
 func GetNoStore(key []byte) (*List, error) {
-	lp := lcache.Get(string(key))
+	lp := Lcache.Get(string(key))
 	if lp != nil {
 		return lp, nil
 	}
-	return getNew(key, pstore) // This retrieves a new *List and sets refcount to 1.
+	return getNew(key, Pstore) // This retrieves a new *List and sets refcount to 1.
 }
 
 // This doesn't sync, so call this only when you don't care about dirty posting lists in
 // memory(for example before populating snapshot) or after calling syncAllMarks
 func EvictLRU() {
-	lcache.Reset()
+	Lcache.Reset()
 }

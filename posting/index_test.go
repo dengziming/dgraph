@@ -137,7 +137,7 @@ func addMutation(t *testing.T, l *List, edge *pb.DirectedEdge, op uint32,
 		require.NoError(t, err)
 	}
 
-	writer := x.NewTxnWriter(pstore)
+	writer := x.NewTxnWriter(Pstore)
 	require.NoError(t, txn.CommitToDisk(writer, commitTs))
 	require.NoError(t, writer.Flush())
 	require.NoError(t, txn.CommitToMemory(commitTs))
@@ -158,7 +158,7 @@ func TestTokensTable(t *testing.T) {
 	key := x.DataKey("name", 1)
 	l, err := getNew(key, ps)
 	require.NoError(t, err)
-	lcache.PutIfMissing(string(l.key), l)
+	Lcache.PutIfMissing(string(l.key), l)
 
 	edge := &pb.DirectedEdge{
 		Value:  []byte("david"),
@@ -182,7 +182,7 @@ func TestTokensTable(t *testing.T) {
 func tokensForTest(attr string) []string {
 	pk := x.ParsedKey{Attr: attr}
 	prefix := pk.IndexPrefix()
-	txn := pstore.NewTransactionAt(math.MaxUint64, false)
+	txn := Pstore.NewTransactionAt(math.MaxUint64, false)
 	defer txn.Discard()
 	it := txn.NewIterator(badger.DefaultIteratorOptions)
 	defer it.Close()

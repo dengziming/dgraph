@@ -14,12 +14,18 @@
  * limitations under the License.
  */
 
-package posting
+package benchmark
 
 import (
 	"context"
+	"flag"
+	"fmt"
 	"math/rand"
+	"os"
+	"sync/atomic"
 	"testing"
+
+	"github.com/dgraph-io/dgraph/posting"
 
 	"github.com/golang/glog"
 
@@ -27,32 +33,41 @@ import (
 	"github.com/dgraph-io/dgraph/x"
 )
 
-var dbInitialized bool
 var predicateKeys [][]byte
 
-//var plistLen = 1000000
+func TestMain(m *testing.M) {
+	flag.Parse()
+	dir := posting.SetupStore()
+	initDB()
+	r := m.Run()
+	os.RemoveAll(dir)
+	os.Exit(r)
+}
 
-func ensureDBInitialized(b *testing.B) {
+var plistLen = 100000
+
+const MB = 1024 * 1024
+
+func initDB() {
 	//if !dbInitialized {
 	predicateKeys = [][]byte{}
-	glog.Infof("setting up the cluster")
+	fmt.Println("logging")
+	glog.Infof("-----------------------\nsetting up the cluster")
 	ctx := context.Background()
 	startTs := uint64(1)
 
-	txn := Oracle().RegisterStartTs(startTs)
+	txn := posting.Oracle().RegisterStartTs(startTs)
 	// put data into the pstore with 1M different posting lists
-	numPlists := 100
+	numUidsPerList := 100
 	attr := "name"
 
-	for i := 0; i < b.N; i++ {
+	for i := 0; i < plistLen; i++ {
 		randomKey := x.DataKey(attr, uint64(i))
 		// cache the plist associated with key so that it can be committed later
-		l, err := Get(randomKey)
-		if err != nil {
-			b.Error(err)
-		}
+		l, err := posting.Get(randomKey)
+		x.Check(err)
 
-		for j := 0; j < numPlists; j++ {
+		for j := 0; j < numUidsPerList; j++ {
 			edge := &pb.DirectedEdge{
 				ValueId: uint64(j),
 				Label:   "testing",
@@ -60,59 +75,58 @@ func ensureDBInitialized(b *testing.B) {
 			}
 
 			if err = l.AddMutation(ctx, txn, edge); err != nil {
-				b.Error(err)
+				x.Check(err)
 			}
+		}
+
+		if i%10000 == 0 {
+			writer := x.NewTxnWriter(posting.Pstore)
+			x.Check(txn.CommitToDisk(writer, 1))
+			writer.Flush()
+
+			x.Check(txn.CommitToMemory(1))
+			glog.Infof("committed to disk i:%d", i)
 		}
 
 		predicateKeys = append(predicateKeys, randomKey)
 	}
 
-	writer := x.NewTxnWriter(pstore)
-	txn.CommitToDisk(writer, 1)
-	writer.Flush()
-	b.Logf("done committing to disk with %d keys, cache size %d", len(predicateKeys), lcache.curSize)
-
-	dbInitialized = true
-	//}
+	glog.Infof("done committing to disk with %d keys, cache size %d", len(predicateKeys),
+		atomic.LoadUint64(&posting.Lcache.CurSize))
 }
 
 func BenchmarkGet(b *testing.B) {
 	b.SetParallelism(100)
-	ensureDBInitialized(b)
-	// run go routines in parallel trying to get keys from the LRU
+	// clear cache to avoid influence from previous runs of this function
+	posting.Lcache.Reset()
+
 	x.LcacheHit.Set(0)
 	x.LcacheMiss.Set(0)
 	x.LcacheRace.Set(0)
 
-	oldCacheSize := lcache.curSize
-	// clear cache to start fresh
-	lcache.Reset()
+	//oldCacheSize := atomic.LoadUint64(&posting.Lcache.CurSize)
 	// limit the cache size to 1/10 of required size to enable evictions
-	lcache.UpdateMaxSize(oldCacheSize / 10)
+	posting.Lcache.UpdateMaxSize(MB)
+	// ensure cache is empty before reading data
+	posting.Lcache.Reset()
 
-	b.ResetTimer()
+	//b.ResetTimer()
 	numGetsPerGoRoutine := 100
+	// run go routines in parallel trying to get keys from the LRU
+	glog.Infof("benchmark with N:%d", b.N)
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-
 			for i := 0; i < numGetsPerGoRoutine; i++ {
 				randomKeyIndex := rand.Intn(len(predicateKeys))
 				randomKey := predicateKeys[randomKeyIndex]
-				_, err := Get(randomKey)
+				_, err := posting.Get(randomKey)
 				x.Check(err)
-
 			}
-			/*
-				actualPLen := plist.Length(2, 0)
-				if actualPLen != plistLen {
-					b.Fatalf("the plist should have a length of %d, got %d instead", plistLen, actualPLen)
-				}
-			*/
 		}
 	})
 	glog.Infof("cache hit:%d (%f), cache miss:%d, cache race:%d, evicts: %d",
 		x.LcacheHit.Value(),
 		(float64(x.LcacheHit.Value()) / float64(b.N)),
-		x.LcacheMiss.Value(), x.LcacheRace.Value(), lcache.evicts)
+		x.LcacheMiss.Value(), x.LcacheRace.Value(), posting.Lcache.Evicts)
 	glog.Flush()
 }
