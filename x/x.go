@@ -474,12 +474,15 @@ func SpanTimer(span *trace.Span, name string) func() {
 	if span == nil {
 		return func() {}
 	}
-	uniq := rand.Int63()
-	attrs := []trace.Attribute{trace.Int64Attribute("func_id", uniq)}
-	span.Annotate(attrs, name)
+	uniq := int64(rand.Int31())
+	attrs := []trace.Attribute{
+		trace.Int64Attribute("funcId", uniq),
+		trace.StringAttribute("funcName", name),
+	}
+	span.Annotate(attrs, "")
 	start := time.Now()
 
 	return func() {
-		span.Annotatef(attrs, "%s done. Took %s", name, time.Since(start))
+		span.Annotatef(attrs, "Done. Took %s", time.Since(start))
 	}
 }
