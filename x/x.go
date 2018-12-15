@@ -479,10 +479,10 @@ func SpanTimer(span *trace.Span, name string) func() {
 		trace.Int64Attribute("funcId", uniq),
 		trace.StringAttribute("funcName", name),
 	}
-	span.Annotate(attrs, "")
+	span.Annotate(attrs, "Start.")
 	start := time.Now()
 
 	return func() {
-		span.Annotatef(attrs, "Done. Took %s", time.Since(start))
+		span.Annotatef(attrs, "End. Took %s", time.Since(start))
 	}
 }
